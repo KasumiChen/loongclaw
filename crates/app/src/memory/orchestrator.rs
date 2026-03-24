@@ -36,7 +36,7 @@ impl MemoryDiagnostics {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct BuiltinMemoryOrchestrator;
+pub(crate) struct BuiltinMemoryOrchestrator;
 
 #[cfg(test)]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -110,7 +110,7 @@ impl Drop for ScopedMemoryOrchestratorTestFaults {
 }
 
 impl BuiltinMemoryOrchestrator {
-    pub fn hydrate_stage_envelope(
+    fn hydrate_stage_envelope(
         &self,
         session_id: &str,
         config: &MemoryRuntimeConfig,
@@ -124,9 +124,23 @@ impl BuiltinMemoryOrchestrator {
         })?;
         entries.extend(derive.records);
 
-        let retrieve = run_pre_assembly_stage(MemoryStageFamily::Retrieve, config, || {
-            run_retrieval_stage(session_id, config, &recent_window)
-        })?;
+        let retrieve = if retrieval_request.is_some() {
+            run_pre_assembly_stage(MemoryStageFamily::Retrieve, config, || {
+                run_retrieval_stage(session_id, config, &recent_window)
+            })?
+        } else {
+            StageRunResult {
+                records: Vec::new(),
+                diagnostics: StageDiagnostics {
+                    family: MemoryStageFamily::Retrieve,
+                    outcome: StageOutcome::Skipped,
+                    budget_ms: None,
+                    elapsed_ms: None,
+                    fallback_activated: false,
+                    message: None,
+                },
+            }
+        };
         entries.extend(retrieve.records);
 
         let rank = run_rank_stage(entries);
@@ -144,7 +158,7 @@ impl BuiltinMemoryOrchestrator {
         })
     }
 
-    pub fn hydrate(
+    fn hydrate(
         &self,
         session_id: &str,
         config: &MemoryRuntimeConfig,
@@ -312,7 +326,9 @@ pub fn hydrate_memory_context(
     session_id: &str,
     config: &MemoryRuntimeConfig,
 ) -> Result<HydratedMemoryContext, String> {
-    Ok(hydrate_stage_envelope(session_id, config)?.hydrated)
+    match config.system {
+        MemorySystemKind::Builtin => BuiltinMemoryOrchestrator.hydrate(session_id, config),
+    }
 }
 
 pub fn hydrate_stage_envelope(
@@ -666,6 +682,14 @@ mod tests {
             hydrate_stage_envelope("stage-window-only", &config).expect("hydrate staged envelope");
 
         assert_eq!(envelope.retrieval_request, None);
+        assert_eq!(
+            envelope
+                .diagnostics
+                .iter()
+                .find(|diag| diag.family == MemoryStageFamily::Retrieve)
+                .map(|diag| diag.outcome),
+            Some(StageOutcome::Skipped)
+        );
 
         let _ = std::fs::remove_file(&db_path);
         let _ = std::fs::remove_dir(&tmp);
@@ -692,6 +716,14 @@ mod tests {
             .expect("hydrate staged envelope");
 
         assert_eq!(envelope.retrieval_request, None);
+        assert_eq!(
+            envelope
+                .diagnostics
+                .iter()
+                .find(|diag| diag.family == MemoryStageFamily::Retrieve)
+                .map(|diag| diag.outcome),
+            Some(StageOutcome::Skipped)
+        );
 
         let _ = std::fs::remove_file(&db_path);
         let _ = std::fs::remove_dir(&tmp);
@@ -763,8 +795,8 @@ mod tests {
         let _ = std::fs::remove_file(&db_path);
 
         let config = crate::memory::runtime_config::MemoryRuntimeConfig {
-            profile: MemoryProfile::WindowOnly,
-            mode: MemoryMode::WindowOnly,
+            profile: MemoryProfile::WindowPlusSummary,
+            mode: MemoryMode::WindowPlusSummary,
             sqlite_path: Some(db_path.clone()),
             sliding_window: 2,
             ..crate::memory::runtime_config::MemoryRuntimeConfig::default()

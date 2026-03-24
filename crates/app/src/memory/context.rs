@@ -329,6 +329,14 @@ mod tests {
         assert!(!envelope.hydrated.entries.is_empty());
         assert!(!envelope.diagnostics.is_empty());
         assert_eq!(envelope.hydrated.diagnostics.system_id, "builtin");
+        assert_eq!(
+            envelope
+                .diagnostics
+                .iter()
+                .find(|diag| diag.family == crate::memory::MemoryStageFamily::Retrieve)
+                .map(|diag| diag.outcome),
+            Some(crate::memory::StageOutcome::Succeeded)
+        );
 
         let _ = std::fs::remove_file(&db_path);
         let _ = std::fs::remove_dir(&tmp);
@@ -361,7 +369,16 @@ mod tests {
             outcome.payload["operation"],
             json!(MEMORY_OP_READ_STAGE_ENVELOPE)
         );
-        assert!(decode_stage_envelope(&outcome.payload).is_some());
+        let envelope = decode_stage_envelope(&outcome.payload).expect("decode stage envelope");
+        assert_eq!(envelope.retrieval_request, None);
+        assert_eq!(
+            envelope
+                .diagnostics
+                .iter()
+                .find(|diag| diag.family == crate::memory::MemoryStageFamily::Retrieve)
+                .map(|diag| diag.outcome),
+            Some(crate::memory::StageOutcome::Skipped)
+        );
 
         let _ = std::fs::remove_file(&db_path);
         let _ = std::fs::remove_dir(&tmp);

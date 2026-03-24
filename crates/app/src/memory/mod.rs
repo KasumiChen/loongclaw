@@ -34,8 +34,7 @@ pub use canonical::{
 pub use context::load_prompt_context;
 pub use kernel_adapter::MvpMemoryAdapter;
 pub use orchestrator::{
-    BuiltinMemoryOrchestrator, HydratedMemoryContext, MemoryDiagnostics, hydrate_memory_context,
-    hydrate_stage_envelope,
+    HydratedMemoryContext, MemoryDiagnostics, hydrate_memory_context, hydrate_stage_envelope,
 };
 #[cfg(test)]
 pub use orchestrator::{MemoryOrchestratorTestFaults, ScopedMemoryOrchestratorTestFaults};
